@@ -202,6 +202,43 @@ def _split_by_ncx(points, docs, flat) -> "list[C.ChapterDraft]":
     return out
 
 
+def _group_volume_title(docs) -> str:
+    """A merged anthology opens each volume's directory with that volume's own
+    title, above its table of contents. That line is the volume's name."""
+    for doc in docs[:1]:
+        for block in doc.blocks[:3]:
+            text = block.text
+            if text and len(text) <= 40 and not C.FRONT_MATTER.match(text):
+                return text
+    return ""
+
+
+def _label_by_volume(groups) -> None:
+    """Prefix each volume's chapters with the volume, but only when leaving them
+    bare would be ambiguous. Volumes that number their chapters from 1 every
+    time collide; ones numbered straight through the set do not, and gain
+    nothing from the prefix."""
+    titles = [g["volume_title"] for g in groups]
+    if len(groups) < 2 or not all(titles):
+        return
+    seen, collides = set(), False
+    for group in groups:
+        for draft in group["drafts"]:
+            if draft.title in seen:
+                collides = True
+            seen.add(draft.title)
+    if not collides:
+        return
+
+    base = M.common_base_title(titles)
+    for group in groups:
+        label = M.volume_label(group["volume_title"], base)
+        if not label:
+            continue
+        for draft in group["drafts"]:
+            draft.title = f"{label} - {draft.title}" if draft.title else label
+
+
 def _split_group(docs) -> "list[C.ChapterDraft]":
     """Chapter structure inside one directory of the book."""
     flat = [b for d in docs for b in d.blocks]
@@ -277,13 +314,19 @@ def load(source, options, name=None, mtime=None) -> "tuple[M.WorkMeta, list[C.Ch
     if _ncx_usable(points, docs):
         drafts = _split_by_ncx(points, docs, flat)
     else:
-        drafts = []
         seen_groups = []
         for doc in docs:
             if doc.group not in seen_groups:
                 seen_groups.append(doc.group)
+        groups = []
         for group in seen_groups:
-            drafts.extend(_split_group([d for d in docs if d.group == group]))
+            members = [d for d in docs if d.group == group]
+            groups.append({
+                "volume_title": _group_volume_title(members),
+                "drafts": _split_group(members),
+            })
+        _label_by_volume(groups)
+        drafts = [d for g in groups for d in g["drafts"]]
 
     drafts = C.strip_title_echoes(drafts)
     if not options.keep_front_matter:

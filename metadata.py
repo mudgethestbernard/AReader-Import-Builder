@@ -246,5 +246,23 @@ def parse_opf_meta(dc: "dict[str, list[str]]", subjects: "list[str]") -> WorkMet
     return meta
 
 
+def common_base_title(titles) -> str:
+    """The part every volume title shares - the novel's own name."""
+    if not titles:
+        return ""
+    import os
+    base = os.path.commonprefix(list(titles))
+    # Volume 1 and volume 10 share the digit, so the common prefix can swallow
+    # part of the number; trim it back off.
+    return base.rstrip(" 	-_·:()[]（）0123456789").strip()
+
+
+def volume_label(title: str, base: str, fallback: str = "") -> str:
+    """What is left of a volume's title once the novel's name is removed."""
+    label = title[len(base):] if base and title.startswith(base) else title
+    label = label.strip(" 	-_·:()[]（）")
+    return label or fallback
+
+
 def today() -> str:
     return date.today().isoformat()

@@ -13,7 +13,9 @@ MARKER_FAMILIES: list[tuple[str, re.Pattern]] = [
     ("N화", re.compile(r"^\d+\s*[화장회편]\s*[.:\-–—]?\s*(?P<rest>.{0,40})$")),
     ("#N", re.compile(r"^#\s*(?P<num>\d+)\s*[.:\-–—]?\s*(?P<rest>.{0,40})$")),
     ("Chapter N", re.compile(r"^(?:chapter|ch\.?)\s*\d+\s*[.:\-–—]?\s*(?P<rest>.{0,40})$", re.I)),
-    ("NN. 제목", re.compile(r"^\d{1,3}\s*[.．]\s*(?P<rest>\S.{0,40})$")),
+    # The title after the number is optional: plenty of books number their
+    # chapters and nothing else.
+    ("NN.", re.compile(r"^\d{1,3}\s*[.．]\s*(?P<rest>.{0,40})$")),
     ("서두/외전", re.compile(
         r"^(?:프롤로그|에필로그|서장|종장|외전|번외|후기|작가의\s*말|prologue|epilogue|interlude)"
         r"\s*\d*\s*[.:\-–—]?\s*(?P<rest>.{0,40})$", re.I)),
@@ -70,9 +72,19 @@ def split_on_markers(blocks: list[Block], family: re.Pattern) -> list[ChapterDra
     out = []
     for i, start in enumerate(starts):
         end = starts[i + 1] if i + 1 < len(starts) else len(blocks)
-        title = blocks[start].text
-        out.append(ChapterDraft(title, blocks[start + 1:end]))
+        out.append(ChapterDraft(tidy_marker_title(blocks[start].text), blocks[start + 1:end]))
     return out
+
+
+_BARE_NUMBER = re.compile(r"^(\d{1,3})\s*[.．]\s*$")
+
+
+def tidy_marker_title(text: str) -> str:
+    """`1.` names a chapter but reads badly in a list, and the number alone is
+    the whole title, so drop the trailing stop. A named title keeps its own."""
+    text = text.strip()
+    bare = _BARE_NUMBER.match(text)
+    return bare.group(1) if bare else text
 
 
 def split_on_headings(blocks: list[Block]) -> list[ChapterDraft]:
