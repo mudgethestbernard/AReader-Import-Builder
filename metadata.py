@@ -2,6 +2,7 @@
 
 import html as _html
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -24,7 +25,10 @@ LANGUAGES = {
     "zh": "中文-普通话 國語", "chinese": "中文-普通话 國語",
 }
 
-# A calibre/epubmerge anthology writes hashes where a title belongs.
+# epubmerge labels a merged file "<something> Anthology", sometimes twice; the
+# real title is on the file itself. It also writes hashes where a title belongs.
+_ANTHOLOGY = re.compile(r"\bAnthology\b", re.I)
+
 _HASHLIKE = re.compile(r"[0-9a-f]{16,}", re.I)
 _HANGUL = re.compile(r"[가-힣]")
 
@@ -75,6 +79,13 @@ class WorkMeta:
             self.complete = other.complete
 
 
+def nfc(text: str) -> str:
+    """Hangul reaches us decomposed from files written on macOS, where 완결 is
+    six jamo rather than two syllables. Nothing matches in that form - not the
+    status words, not the chapter markers - so everything is composed on entry."""
+    return unicodedata.normalize("NFC", text) if text else text
+
+
 def looks_like_hash(value: str) -> bool:
     return bool(value) and bool(_HASHLIKE.search(value))
 
@@ -107,7 +118,7 @@ def parse_filename(stem: str) -> WorkMeta:
     """Read the conventions a shared novel file uses: a bracketed author, a
     trailing status note, a chapter range that is packaging not title."""
     meta = WorkMeta()
-    name = stem.strip()
+    name = nfc(stem).strip()
 
     lead = re.match(r"^[\[\(【]\s*([^\]\)】]+)\s*[\]\)】]\s*(.*)$", name)
     if lead:
@@ -210,10 +221,10 @@ def parse_ao3_preface(html: str) -> "WorkMeta | None":
 
 def parse_opf_meta(dc: "dict[str, list[str]]", subjects: "list[str]") -> WorkMeta:
     meta = WorkMeta()
-    title = (dc.get("title") or [""])[0].strip()
-    if title and not looks_like_hash(title):
+    title = nfc((dc.get("title") or [""])[0]).strip()
+    if title and not looks_like_hash(title) and not _ANTHOLOGY.search(title):
         meta.title = title
-    creator = (dc.get("creator") or [""])[0].strip()
+    creator = nfc((dc.get("creator") or [""])[0]).strip()
     if creator and creator.lower() != "unknown" and not looks_like_hash(creator):
         meta.author = creator
     description = (dc.get("description") or [""])[0].strip()
@@ -259,7 +270,13 @@ def common_base_title(titles) -> str:
 
 def volume_label(title: str, base: str, fallback: str = "") -> str:
     """What is left of a volume's title once the novel's name is removed."""
-    label = title[len(base):] if base and title.startswith(base) else title
+    label = (title[len(base):] if base and title.startswith(base) else title).strip()
+    # One volume filed without a parenthetical the others carry shortens the
+    # shared name, which leaves that parenthetical at the front of every other
+    # label. It belongs to the title - unless it is the whole label, as "(외전)".
+    trailing = re.match(r"^[(（][^)）]*[)）]\s*(.+)$", label)
+    if trailing:
+        label = trailing.group(1)
     label = label.strip(" 	-_·:()[]（）")
     return label or fallback
 

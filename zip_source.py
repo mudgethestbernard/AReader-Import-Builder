@@ -40,22 +40,6 @@ def _entries(zf: zipfile.ZipFile) -> list:
     return out
 
 
-def _base_title(titles: "list[str]") -> str:
-    """The part every volume title shares - the novel's own name."""
-    if not titles:
-        return ""
-    base = os.path.commonprefix(titles)
-    # Volume 1 and volume 10 share the digit, so the common prefix can swallow
-    # part of the number; trim it back off.
-    return base.rstrip(" \t-_·:()[]（）0123456789").strip()
-
-
-def _volume_label(title: str, base: str, fallback: str) -> str:
-    label = title[len(base):] if base and title.startswith(base) else title
-    label = label.strip(" \t-_·:()[]（）")
-    return label or fallback
-
-
 def _order(label: str, index: int) -> tuple:
     """Numbered volumes first in numeric order, then the extras, both stable."""
     if _EXTRA.search(label):
@@ -84,7 +68,7 @@ def load_many(path, options, name=None, mtime=None) -> list:
 
         volumes = []
         for index, info in enumerate(infos):
-            inner = os.path.basename(info.filename)
+            inner = M.nfc(os.path.basename(info.filename))
             reader = READERS[os.path.splitext(inner)[1].lower()]
             try:
                 meta, drafts = reader.load(zf.read(info), options, name=inner, mtime=mtime)
@@ -106,10 +90,10 @@ def load_many(path, options, name=None, mtime=None) -> list:
         volume["name_title"] = M.parse_filename(stem).title or stem
 
     titles = [v["name_title"] for v in volumes]
-    base = _base_title(titles)
+    base = M.common_base_title(titles)
     if len(base) < 2:                       # file names disagree; try the books
         titles = [v["meta"].title or v["file"] for v in volumes]
-        base = _base_title(titles)
+        base = M.common_base_title(titles)
         for volume, title in zip(volumes, titles):
             volume["name_title"] = title
     # Without a shared name these are separate books that merely travelled
@@ -118,8 +102,8 @@ def load_many(path, options, name=None, mtime=None) -> list:
         return [(v["meta"], v["drafts"]) for v in volumes]
 
     for volume in volumes:
-        volume["label"] = _volume_label(volume["name_title"], base,
-                                        os.path.splitext(volume["file"])[0])
+        volume["label"] = M.volume_label(volume["name_title"], base,
+                                         os.path.splitext(volume["file"])[0])
     volumes.sort(key=lambda v: _order(v["label"], v["index"]))
 
     merged: "list[C.ChapterDraft]" = []

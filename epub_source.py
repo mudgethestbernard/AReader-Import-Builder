@@ -21,6 +21,9 @@ EXTRA_STEMS = re.compile(
     r"about|ad|advert\w*|promo|목차|표지|판권)[-_ ]?\d*$", re.I)
 MIN_DOC_CHARS = 150
 
+# epubmerge appends its own word to every level of a merged book's titles.
+_ANTHOLOGY_TAIL = re.compile(r"(\s+Anthology)+\s*$", re.I)
+
 
 def _tag(element) -> str:
     return element.tag.rsplit("}", 1)[-1].lower()
@@ -29,10 +32,10 @@ def _tag(element) -> str:
 def _decode(data: bytes) -> str:
     for encoding in ("utf-8", "utf-16", "cp949", "latin-1"):
         try:
-            return data.decode(encoding)
+            return M.nfc(data.decode(encoding))
         except UnicodeDecodeError:
             continue
-    return data.decode("utf-8", errors="replace")
+    return M.nfc(data.decode("utf-8", errors="replace"))
 
 
 class _Epub:
@@ -138,35 +141,65 @@ class _Doc:
         return self.stem
 
 
-def _ncx_points(book: _Epub, ncx_href: str) -> "list[tuple[str, str, str]]":
-    """(label, resolved href, fragment) in document order."""
+class _NavPoint:
+    """One NCX entry. `section` is the entry directly above it, which in a
+    merged anthology is the volume this chapter belongs to."""
+
+    def __init__(self, label, href, fragment, depth, section):
+        self.label = label
+        self.href = href
+        self.fragment = fragment
+        self.depth = depth
+        self.section = section
+
+
+def _ncx_points(book: _Epub, ncx_href: str) -> "list[_NavPoint]":
+    """The NCX flattened in document order, each entry keeping its depth and the
+    section it sits under. An NCX nests: volumes hold chapters."""
     data = book.read(book.resolve(book.opf_dir, ncx_href))
     if not data:
         return []
     ncx_dir = posixpath.dirname(book.resolve(book.opf_dir, ncx_href))
-    out = []
+    out: "list[_NavPoint]" = []
+
+    def own(element, name):
+        """A navPoint's own label/content, not one belonging to a child."""
+        for child in element:
+            if _tag(child) == name:
+                return child
+            if _tag(child) == "navlabel" and name == "text":
+                for grand in child:
+                    if _tag(grand) == "text":
+                        return grand
+        return None
+
+    def walk(element, depth, parent):
+        for child in element:
+            if _tag(child) != "navpoint":
+                continue
+            text = own(child, "text")
+            content = own(child, "content")
+            label = M.nfc((text.text or "").strip()) if text is not None else ""
+            src = content.get("src") or "" if content is not None else ""
+            if src:
+                href, _, fragment = src.partition("#")
+                # The entry directly above a chapter is its volume. An outer one
+                # names the whole anthology, which every chapter shares.
+                out.append(_NavPoint(label, book.resolve(ncx_dir, href), fragment,
+                                     depth, parent))
+            walk(child, depth + 1, label)
+
     for element in ET.fromstring(data).iter():
-        if _tag(element) != "navpoint":
-            continue
-        label = ""
-        src = ""
-        for child in element.iter():
-            name = _tag(child)
-            if name == "text" and not label:
-                label = (child.text or "").strip()
-            elif name == "content" and not src:
-                src = child.get("src") or ""
-        if not src:
-            continue
-        href, _, fragment = src.partition("#")
-        out.append((label, book.resolve(ncx_dir, href), fragment))
+        if _tag(element) == "navmap":
+            walk(element, 0, "")
+            break
     return out
 
 
 def _ncx_usable(points, docs) -> bool:
     known = {d.href for d in docs}
-    points = [p for p in points if p[1] in known]
-    labels = [p[0] for p in points]
+    points = [p for p in points if p.href in known]
+    labels = [p.label for p in points]
     if len(points) < 2:
         return False
     if sum(1 for l in labels if not l or M.looks_like_hash(l)) * 2 > len(labels):
@@ -176,30 +209,54 @@ def _ncx_usable(points, docs) -> bool:
 
 def _split_by_ncx(points, docs, flat) -> "list[C.ChapterDraft]":
     by_href = {d.href: d for d in docs}
-    starts = []
-    for label, href, fragment in points:
-        doc = by_href.get(href)
+    located = []
+    for order, point in enumerate(points):
+        doc = by_href.get(point.href)
         if doc is None:
             continue
-        index = doc.offset + (doc.anchors.get(fragment, 0) if fragment else 0)
-        starts.append((index, label))
-    starts.sort(key=lambda s: s[0])
-    # Two navPoints on one spot (a nested NCX repeats its parent) are one chapter.
-    deduped = []
-    for index, label in starts:
-        if deduped and deduped[-1][0] == index:
-            continue
-        deduped.append((index, label))
+        index = doc.offset + (doc.anchors.get(point.fragment, 0) if point.fragment else 0)
+        located.append((index, order, point))
+    # A volume entry sits on the same spot as its own first chapter. The deeper
+    # of the two names the chapter; the shallower only names the volume.
+    best = {}
+    for index, order, point in located:
+        current = best.get(index)
+        if current is None or point.depth > current[1].depth:
+            best[index] = (order, point)
+    chosen = sorted(best.items(), key=lambda kv: kv[0])
 
     out = []
-    for i, (index, label) in enumerate(deduped):
-        end = deduped[i + 1][0] if i + 1 < len(deduped) else len(flat)
+    for i, (index, (_, point)) in enumerate(chosen):
+        end = chosen[i + 1][0] if i + 1 < len(chosen) else len(flat)
         body = flat[index:end]
         # The navPoint usually lands on the chapter's own heading; don't repeat it.
-        if body and body[0].kind == "h" and body[0].text == label:
+        if body and body[0].kind == "h" and body[0].text == point.label:
             body = body[1:]
-        out.append(C.ChapterDraft(label, body))
+        draft = C.ChapterDraft(point.label, body)
+        draft.section = point.section if point.section != point.label else ""
+        out.append(draft)
+    _label_by_section(out)
     return out
+
+
+def _label_by_section(drafts) -> None:
+    """Prefix chapters with the volume the NCX filed them under, but only when
+    leaving them bare would be ambiguous - a set that numbers its chapters from
+    one in every volume repeats every name."""
+    sections = [d.section for d in drafts]
+    if not any(sections):
+        return
+    titles = [d.title for d in drafts]
+    if len(set(titles)) == len(titles):
+        return
+    names = [_ANTHOLOGY_TAIL.sub("", s).strip() for s in dict.fromkeys(sections) if s]
+    base = M.common_base_title(names)
+    for draft in drafts:
+        if not draft.section:
+            continue
+        label = M.volume_label(_ANTHOLOGY_TAIL.sub("", draft.section).strip(), base)
+        if label and draft.title:
+            draft.title = f"{label} - {draft.title}"
 
 
 def _group_volume_title(docs) -> str:

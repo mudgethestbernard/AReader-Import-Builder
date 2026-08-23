@@ -13,10 +13,10 @@ ENCODINGS = ("utf-8-sig", "utf-8", "cp949", "euc-kr", "utf-16", "latin-1")
 def decode(raw: bytes) -> str:
     for encoding in ENCODINGS:
         try:
-            return raw.decode(encoding)
+            return M.nfc(raw.decode(encoding))
         except UnicodeDecodeError:
             continue
-    return raw.decode("utf-8", errors="replace")
+    return M.nfc(raw.decode("utf-8", errors="replace"))
 
 
 def read_text(path: str) -> str:

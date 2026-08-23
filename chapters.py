@@ -33,6 +33,8 @@ FRONT_MATTER = re.compile(
 class ChapterDraft:
     title: str
     blocks: list[Block] = field(default_factory=list)
+    # The volume or part this chapter was filed under, when the source says.
+    section: str = ""
 
     @property
     def char_count(self) -> int:
