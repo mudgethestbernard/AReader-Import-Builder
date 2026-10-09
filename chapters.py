@@ -39,7 +39,7 @@ class ChapterDraft:
     blocks: list[Block] = field(default_factory=list)
     # The volume or part this chapter was filed under, when the source says.
     section: str = ""
-    # The author's note that followed the chapter, written to chapterNotes.
+    # The author's note that followed the chapter, written as its end notes.
     notes: list[Block] = field(default_factory=list)
 
     @property

@@ -56,6 +56,17 @@ def count_words(chapters) -> int:
     return total
 
 
+def chapter_html(chapter, number: int) -> str:
+    """The chapter body, with its author's note as an AO3 end-notes module. The
+    reader shows that module as the "Notes:" card under the chapter; it never
+    reads the chapterNotes field."""
+    body = B.blocks_to_html(footnotes.render(chapter.blocks, number))
+    if not chapter.notes:
+        return body
+    return (f'{body}\n<div class="end notes module"><h3 class="heading">Notes:</h3>'
+            f'<blockquote class="userstuff">{B.blocks_to_html(chapter.notes)}</blockquote></div>')
+
+
 def build_work(meta, chapters, work_id: str) -> dict:
     complete = bool(meta.complete)
     chapter_max = meta.chapter_max or (len(chapters) if complete else 0)
@@ -92,8 +103,8 @@ def build_work(meta, chapters, work_id: str) -> dict:
                 "url": "",
                 "date": meta.published,
                 "number": i + 1,
-                "content": B.blocks_to_html(footnotes.render(chapter.blocks, i + 1)),
-                "chapterNotes": B.blocks_to_html(chapter.notes),
+                "content": chapter_html(chapter, i + 1),
+                "chapterNotes": "",
                 "isFichubSource": False,
             }
             for i, chapter in enumerate(chapters)

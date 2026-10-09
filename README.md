@@ -31,7 +31,7 @@ unwrapped to text.
 - **Footnotes** in an EPUB move into the chapter that cites them, numbered from 1
   per chapter and linked both ways.
 - **Ornament lines** such as `✣  ✣  ✣` are kept and centred.
-- **Author's notes** after a chapter's note heading go into `chapterNotes`.
+- **Author's notes** after a chapter's note heading become the chapter's end notes.
 
 ## How chapters are found
 
