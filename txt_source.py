@@ -53,6 +53,7 @@ def load(source, options, name=None, mtime=None) -> "tuple[M.WorkMeta, list[C.Ch
             C.fold_subtitle(draft)
 
     drafts = C.strip_title_echoes(drafts)
+    drafts = C.split_author_notes(drafts)
     drafts = C.drop_front_matter(drafts)
     drafts = C.drop_empty(drafts)
     drafts = C.split_long(drafts, options.max_chars)

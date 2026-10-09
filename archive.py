@@ -12,6 +12,7 @@ import re
 import zipfile
 
 import blocks as B
+import footnotes
 import metadata as M
 
 # Characters Windows will not accept in a file name.
@@ -91,8 +92,8 @@ def build_work(meta, chapters, work_id: str) -> dict:
                 "url": "",
                 "date": meta.published,
                 "number": i + 1,
-                "content": B.blocks_to_html(chapter.blocks),
-                "chapterNotes": "",
+                "content": B.blocks_to_html(footnotes.render(chapter.blocks, i + 1)),
+                "chapterNotes": B.blocks_to_html(chapter.notes),
                 "isFichubSource": False,
             }
             for i, chapter in enumerate(chapters)

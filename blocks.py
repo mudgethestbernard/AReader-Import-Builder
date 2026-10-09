@@ -4,11 +4,16 @@ The reader parses chapter HTML with Jsoup and only walks block-level tags
 (HtmlBlockParser.handleElement), so a chapter body is emitted as a flat run of
 <p>, <hr> and <hN>. Inline markup is kept to the handful of tags InlineHtml
 renders; everything else is unwrapped.
+
+Links are the one exception: they are carried through parsing so footnotes.py
+can tell a footnote reference from an ordinary link, and it unwraps every one
+it does not turn into a footnote.
 """
 
 import html as _html
 import re
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 INLINE_KEEP = {"em", "strong", "i", "b", "u", "s", "strike", "sup", "sub", "code", "small"}
@@ -28,14 +33,19 @@ _TAG_RE = re.compile(r"<[^>]*>")
 
 @dataclass
 class Block:
-    kind: str          # "p" | "hr" | "h" | "img"
+    kind: str          # "p" | "hr" | "h" | "img" | "note"
     inline: str = ""   # sanitized inline HTML; for "img", the whole <img> tag
     level: int = 0     # heading level, 1-6
+    align: str = ""    # "center" for an ornament line
+    # Footnotes referenced from this block, keyed by the placeholder number in
+    # `inline`. A "note" block is the footnote's original location; it is never
+    # written, because footnotes.render puts the note at the end of the chapter.
+    notes: dict = field(default_factory=dict)
 
     @property
     def text(self) -> str:
-        if self.kind == "img":
-            return ""      # a src is not chapter text and must not be counted
+        if self.kind in ("img", "note"):
+            return ""      # a src is not chapter text, and a note is moved
         return _html.unescape(_TAG_RE.sub("", self.inline)).strip()
 
 
@@ -44,6 +54,25 @@ def is_scene_break(text: str) -> bool:
     if not t or len(t) > 20:
         return False
     return all(ch in _BREAK_CHARS or ch.isspace() for ch in t)
+
+
+def is_ornament(text: str) -> bool:
+    """A scene-change ornament the divider set does not cover, such as
+    `✣  ✣  ✣`. It is kept as a centred line rather than a rule, because the
+    book chose that glyph. Punctuation does not count: a line of `……` or `?!` is
+    dialogue."""
+    t = text.strip()
+    if not t or len(t) > 20:
+        return False
+    symbols = 0
+    for ch in t:
+        if ch.isspace() or ch in _BREAK_CHARS:
+            continue
+        if unicodedata.category(ch).startswith("S"):
+            symbols += 1
+            continue
+        return False
+    return symbols > 0
 
 
 def escape_text(data: str) -> str:
@@ -61,12 +90,16 @@ def is_loadable_image(src: str) -> bool:
 def blocks_to_html(blocks: list[Block]) -> str:
     out = []
     for b in blocks:
+        if b.kind == "note":
+            continue
         if b.kind == "hr":
             out.append("<hr>")
         elif b.kind == "img":
             out.append(b.inline)
         elif b.kind == "h":
             out.append(f"<h{b.level}>{b.inline}</h{b.level}>")
+        elif b.align:
+            out.append(f'<p align="{b.align}">{b.inline}</p>')
         else:
             out.append(f"<p>{b.inline}</p>")
     return "\n".join(out)
@@ -86,6 +119,7 @@ class _BodyParser(HTMLParser):
         self._seen_body = False
         self._in_body = False
         self._open: list[str] = []
+        self._links: list[bool] = []   # per open <a>: whether it was written
 
     # -- helpers -------------------------------------------------------
     @property
@@ -102,6 +136,9 @@ class _BodyParser(HTMLParser):
             return
         if is_scene_break(plain):
             self.blocks.append(Block("hr"))
+            return
+        if is_ornament(plain):
+            self.blocks.append(Block("p", raw, align="center"))
             return
         if tag in HEADING_TAGS:
             self.blocks.append(Block("h", raw, int(tag[1])))
@@ -147,6 +184,15 @@ class _BodyParser(HTMLParser):
             self._add_image(dict(attrs))
         elif tag == "br":
             self._buf.append("<br>")
+        elif tag == "a":
+            found = dict(attrs)
+            href = (found.get("href") or "").strip()
+            self._links.append(bool(href))
+            if href:
+                # epub:type / role mark a footnote reference outright in EPUB 3.
+                kind = f"{found.get('epub:type') or ''} {found.get('role') or ''}"
+                flag = ' data-noteref=""' if "noteref" in kind else ""
+                self._buf.append(f'<a href="{_html.escape(href, quote=True)}"{flag}>')
         elif tag in INLINE_KEEP:
             self._buf.append(f"<{tag}>")
 
@@ -171,6 +217,9 @@ class _BodyParser(HTMLParser):
             if tag in self._open:
                 # Unbalanced markup happens; drop back to this tag's level.
                 del self._open[self._open.index(tag):]
+        elif tag == "a":
+            if self._links and self._links.pop():
+                self._buf.append("</a>")
         elif tag in INLINE_KEEP:
             self._buf.append(f"</{tag}>")
 
@@ -202,6 +251,8 @@ def parse_text_lines(lines: list[str]) -> list[Block]:
             continue
         if is_scene_break(stripped):
             out.append(Block("hr"))
+        elif is_ornament(stripped):
+            out.append(Block("p", escape_text(stripped), align="center"))
         else:
             out.append(Block("p", escape_text(stripped)))
     return out

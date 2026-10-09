@@ -29,12 +29,18 @@ FRONT_MATTER = re.compile(
     r"cover|copyright|colophon|about\s+the\s+author)\s*$", re.I)
 
 
+# The line a serial puts between a chapter and the author's note under it.
+AUTHOR_NOTE = re.compile(r"^[\[［【]\s*(?:작품|작가)\s*후기\s*[\]］】]$")
+
+
 @dataclass
 class ChapterDraft:
     title: str
     blocks: list[Block] = field(default_factory=list)
     # The volume or part this chapter was filed under, when the source says.
     section: str = ""
+    # The author's note that followed the chapter, written to chapterNotes.
+    notes: list[Block] = field(default_factory=list)
 
     @property
     def char_count(self) -> int:
@@ -119,6 +125,29 @@ def fold_subtitle(chapter: ChapterDraft) -> None:
             return
 
 
+def split_author_note(chapter: ChapterDraft) -> None:
+    """Move everything after a `[작품후기]` line into the chapter's notes. The
+    marker itself goes: the notes section already says what it is."""
+    for i, block in enumerate(chapter.blocks):
+        if block.kind == "p" and AUTHOR_NOTE.match(block.text):
+            notes = chapter.blocks[i + 1:]
+            del chapter.blocks[i:]
+            while chapter.blocks and chapter.blocks[-1].kind == "hr":
+                chapter.blocks.pop()
+            while notes and notes[0].kind == "hr":
+                notes.pop(0)
+            while notes and notes[-1].kind == "hr":
+                notes.pop()
+            chapter.notes = notes
+            return
+
+
+def split_author_notes(chapters: list[ChapterDraft]) -> list[ChapterDraft]:
+    for chapter in chapters:
+        split_author_note(chapter)
+    return chapters
+
+
 def drop_front_matter(chapters: list[ChapterDraft]) -> list[ChapterDraft]:
     return [c for c in chapters if not FRONT_MATTER.match(c.title.strip())]
 
@@ -184,6 +213,7 @@ def split_long(chapters: list[ChapterDraft], max_chars: int) -> list[ChapterDraf
             out.append(chapter)
             continue
         part, size, index = [], 0, 1
+        first = len(out)
         for block in chapter.blocks:
             part.append(block)
             size += len(block.text)
@@ -192,4 +222,7 @@ def split_long(chapters: list[ChapterDraft], max_chars: int) -> list[ChapterDraf
                 part, size, index = [], 0, index + 1
         if part:
             out.append(ChapterDraft(f"{chapter.title} ({index})", part))
+        if len(out) > first:
+            # The author's note came after the whole chapter, so after its last part.
+            out[-1].notes = chapter.notes
     return out

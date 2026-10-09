@@ -10,7 +10,7 @@
  */
 
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/";
-const MODULES = ["metadata", "blocks", "chapters", "archive", "txt_source",
+const MODULES = ["metadata", "blocks", "footnotes", "chapters", "archive", "txt_source",
                  "epub_source", "zip_source", "sources", "cli", "api"];
 const PY_DIR = "/home/pyodide";
 const WORK_DIR = "/work";

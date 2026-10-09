@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET
 
 import blocks as B
 import chapters as C
+import footnotes
 import metadata as M
 import txt_source
 
@@ -351,6 +352,10 @@ def load(source, options, name=None, mtime=None) -> "tuple[M.WorkMeta, list[C.Ch
                 preface, preface_href = found, resolved
         docs.append(_Doc(resolved, text, not options.no_images))
 
+    # Before anything is dropped: a notes page is too short to survive the
+    # filter below once its notes have moved onto the paragraphs citing them.
+    footnotes.link(docs)
+
     if not options.keep_front_matter:
         # The AO3 preface page is the work's metadata, which is already read into
         # `preface`; left in, it would take chapter 1 and shift every number.
@@ -386,6 +391,7 @@ def load(source, options, name=None, mtime=None) -> "tuple[M.WorkMeta, list[C.Ch
         drafts = [d for g in groups for d in g["drafts"]]
 
     drafts = C.strip_title_echoes(drafts)
+    drafts = C.split_author_notes(drafts)
     if not options.keep_front_matter:
         drafts = C.drop_front_matter(drafts)
     drafts = C.drop_empty(drafts, MIN_DOC_CHARS if len(drafts) > 1 else 1)

@@ -26,6 +26,13 @@ bodies are flat `<p>` / `<hr>` runs, which is all `HtmlBlockParser` walks;
 `em`/`strong`/`i`/`b`/`br` and friends survive inline, everything else is
 unwrapped to text.
 
+## Footnotes, ornaments and author's notes
+
+- **Footnotes** in an EPUB move into the chapter that cites them, numbered from 1
+  per chapter and linked both ways.
+- **Ornament lines** such as `✣  ✣  ✣` are kept and centred.
+- **Author's notes** after a chapter's note heading go into `chapterNotes`.
+
 ## How chapters are found
 
 A book is split by the first of these that the file actually supports:
@@ -34,8 +41,7 @@ A book is split by the first of these that the file actually supports:
    anthology writes hashes there, which fails this check.
 2. **In-body headings** (`<h1>`…`<h6>`).
 3. **A repeated marker paragraph** — `Chapter 12`, `#12`, `01. Title`, a
-   prologue or epilogue heading, and the Korean equivalents these files are
-   actually named with. The shape with the most hits wins, chosen per directory
+   prologue or epilogue heading. The shape with the most hits wins, chosen per directory
    so an anthology's main volumes and its side stories can use different ones.
    A run of adjacent markers is a table of contents, so only its last entry
    starts a chapter — that is what keeps the contents list out of the text.
@@ -151,6 +157,7 @@ review screen already shows chapter sizes and dropped-image counts.
 | `sources.py` | one entry point over the three input formats |
 | `txt_source.py`, `epub_source.py`, `zip_source.py` | reading each format |
 | `chapters.py`, `blocks.py` | chapter splitting, HTML to reader blocks |
+| `footnotes.py` | EPUB footnotes, moved into the chapter that cites them |
 | `metadata.py`, `archive.py` | metadata, and writing the zip |
 
 ## Publishing the web version
