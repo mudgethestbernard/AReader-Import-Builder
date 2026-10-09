@@ -265,7 +265,23 @@ def common_base_title(titles) -> str:
     base = os.path.commonprefix(list(titles))
     # Volume 1 and volume 10 share the digit, so the common prefix can swallow
     # part of the number; trim it back off.
-    return base.rstrip(" 	-_·:()[]（）0123456789").strip()
+    # A bracket only goes with it when it is left unmatched, as the "(" of
+    # "Name (1)"; the ")" closing "Name(Hanja)" is part of the name.
+    while True:
+        trimmed = base.rstrip(" 	-_·:0123456789")
+        if trimmed and trimmed[-1] in "([（":
+            trimmed = trimmed[:-1]
+        elif trimmed and trimmed[-1] in ")]）" and _unmatched_close(trimmed):
+            trimmed = trimmed[:-1]
+        if trimmed == base:
+            return base.strip()
+        base = trimmed
+
+
+def _unmatched_close(text: str) -> bool:
+    pairs = {")": "(", "]": "[", "）": "（"}
+    opener = pairs[text[-1]]
+    return text.count(opener) < text.count(text[-1])
 
 
 def volume_label(title: str, base: str, fallback: str = "") -> str:

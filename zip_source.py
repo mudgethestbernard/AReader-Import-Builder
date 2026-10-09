@@ -79,6 +79,14 @@ def load_many(path, options, name=None, mtime=None) -> list:
 
     if not volumes:
         raise ValueError("no chapter text in the zip")
+    return join_volumes(volumes, label)
+
+
+def join_volumes(volumes: list, label: str = "", force: bool = False) -> list:
+    """[(meta, chapters)] out of per-volume reads, each a dict with `index`,
+    `file`, `meta` and `drafts`. Joined into one work when the file names share
+    the novel's name - or always, with `force`, because the reader asked for it.
+    Without either, they stay separate books."""
     if len(volumes) == 1:
         return [(volumes[0]["meta"], volumes[0]["drafts"])]
 
@@ -99,7 +107,9 @@ def load_many(path, options, name=None, mtime=None) -> list:
     # Without a shared name these are separate books that merely travelled
     # together, and joining them would invent a work that does not exist.
     if len(base) < 2 or not all(t.startswith(base) for t in titles):
-        return [(v["meta"], v["drafts"]) for v in volumes]
+        if not force:
+            return [(v["meta"], v["drafts"]) for v in volumes]
+        base = ""            # each volume is then labelled with its whole name
 
     for volume in volumes:
         volume["label"] = M.volume_label(volume["name_title"], base,
@@ -112,8 +122,9 @@ def load_many(path, options, name=None, mtime=None) -> list:
             draft.title = f"{volume['label']} - {draft.title}" if draft.title else volume["label"]
             merged.append(draft)
 
-    meta = _merge_meta([v["meta"] for v in volumes], base,
-                       M.parse_filename(os.path.splitext(os.path.basename(label))[0]))
+    outer = (M.parse_filename(os.path.splitext(os.path.basename(label))[0])
+             if label else M.WorkMeta())
+    meta = _merge_meta([v["meta"] for v in volumes], base, outer)
     meta.volumes = [v["label"] for v in volumes]
     return [(meta, merged)]
 

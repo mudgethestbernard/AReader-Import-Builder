@@ -27,3 +27,21 @@ def load_any(path, options, name=None, mtime=None) -> list:
     if reader is None:
         raise ValueError(f"unsupported file type: {extension or '(none)'}")
     return [reader.load(path, options, name=name, mtime=mtime)]
+
+
+def load_joined(paths, options) -> list:
+    """Several input files read as the volumes of one work, the way a zip of
+    volumes is. A file that is itself several works adds each as a volume."""
+    volumes = []
+    for path in paths:
+        loaded = [(m, c) for m, c in load_any(path, options) if c]
+        for meta, drafts in loaded:
+            # A volume is labelled off its file name; a book inside a zip of
+            # several has none of its own, so it goes by its title.
+            file = (os.path.basename(path) if len(loaded) == 1
+                    else f"{meta.title or os.path.basename(path)}.epub")
+            volumes.append({"index": len(volumes), "file": file,
+                            "meta": meta, "drafts": drafts})
+    if not volumes:
+        return []
+    return zip_source.join_volumes(volumes, force=True)

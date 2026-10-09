@@ -71,6 +71,9 @@ several MB each, mostly embedded fonts nobody reads.
 If the file names share no common name, the zip is treated as separate books
 that merely travelled together, and each becomes its own work.
 
+Volumes chosen as separate files join the same way with "Join into one work"
+(`--join`).
+
 ## Metadata
 
 Richest source wins: an AO3 preface page (rating, warnings, category, fandoms,
@@ -135,6 +138,7 @@ a book had to leave behind.
 | `--dry-run` | print the detected chapters, write nothing |
 | `--verbose` | list every chapter, not just the first and last three |
 | `--separate` | one `.zip` per work instead of one combined archive |
+| `--join` | read every input as a volume of one work |
 | `--no-images` | drop every image, including ones linked by URL |
 | `--language NAME` | override the language on the work card |
 | `--keep-front-matter` | keep cover / contents / copyright pages as chapters |

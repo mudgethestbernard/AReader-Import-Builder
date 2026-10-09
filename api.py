@@ -31,15 +31,19 @@ class Options:
 
 
 def analyze(paths, language="", max_chars=0, keep_front_matter=False,
-            no_images=False, local_ids=False) -> str:
-    """Read each file and describe what was found, without writing anything."""
+            no_images=False, local_ids=False, join=False) -> str:
+    """Read each file and describe what was found, without writing anything.
+    With `join`, every file is read as a volume of one work."""
     options = Options(language, max_chars, keep_front_matter, no_images, local_ids)
     _CACHE.clear()
     out = []
-    for path in paths:
+    batches = [list(paths)] if join and len(paths) > 1 else [[path] for path in paths]
+    for batch in batches:
+        path = batch[0]
         name = os.path.basename(path)
         try:
-            loaded = [(m, c) for m, c in sources.load_any(path, options) if c]
+            loaded = ([(m, c) for m, c in sources.load_any(path, options) if c]
+                      if len(batch) == 1 else sources.load_joined(batch, options))
         except Exception as error:
             out.append({"key": path, "file": name,
                         "error": f"{type(error).__name__}: {error}"})
@@ -56,6 +60,7 @@ def analyze(paths, language="", max_chars=0, keep_front_matter=False,
             out.append({
                 "key": key,
                 "file": name,
+                "joined": len(batch) if len(batch) > 1 else 0,
                 "title": meta.title or "",
                 "author": meta.author or "",
                 "complete": bool(meta.complete),

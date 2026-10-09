@@ -79,6 +79,8 @@ def main(argv=None) -> int:
     parser.add_argument("-o", "--out", default="areader-import.zip", help="output .zip path")
     parser.add_argument("--separate", action="store_true",
                         help="write one .zip per input instead of one combined archive")
+    parser.add_argument("--join", action="store_true",
+                        help="read every input as a volume of one work, as a zip of volumes is")
     parser.add_argument("--dry-run", action="store_true",
                         help="show the detected chapters without writing anything")
     parser.add_argument("--verbose", action="store_true", help="list every chapter")
@@ -101,10 +103,15 @@ def main(argv=None) -> int:
 
     built = []
     failures = 0
-    for path in files:
-        print(f"\n[{os.path.basename(path)}]")
+    # Joined, the whole selection is read as one input.
+    batches = [files] if options.join and len(files) > 1 else [[path] for path in files]
+    for batch in batches:
+        path = batch[0]
+        print(f"\n[{os.path.basename(path)}]" if len(batch) == 1
+              else f"\n[{len(batch)} files joined as one work]")
         try:
-            loaded = [(m, c) for m, c in sources.load_any(path, options) if c]
+            loaded = ([(m, c) for m, c in sources.load_any(path, options) if c]
+                      if len(batch) == 1 else sources.load_joined(batch, options))
         except Exception as error:                       # noqa: BLE001 - report and continue
             print(f"  ! failed: {type(error).__name__}: {error}")
             failures += 1

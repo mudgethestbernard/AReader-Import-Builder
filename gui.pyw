@@ -137,6 +137,7 @@ class App:
 
         self.dry_run = tk.BooleanVar(value=False)
         self.separate = tk.BooleanVar(value=False)
+        self.join = tk.BooleanVar(value=False)
         self.verbose = tk.BooleanVar(value=False)
 
         ttk.Checkbutton(frame, text="Preview only (write nothing)", variable=self.dry_run).grid(
@@ -146,6 +147,8 @@ class App:
 
         ttk.Checkbutton(frame, text="List every chapter", variable=self.verbose).grid(
             row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(frame, text="Join into one work", variable=self.join).grid(
+            row=1, column=1, sticky="w", pady=(6, 0))
 
     def _build_log(self) -> None:
         frame = ttk.LabelFrame(self.root, text=" Output ", padding=8)
@@ -285,6 +288,8 @@ class App:
             argv.append("--dry-run")
         if self.separate.get():
             argv.append("--separate")
+        if self.join.get():
+            argv.append("--join")
         if self.verbose.get():
             argv.append("--verbose")
 

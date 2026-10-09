@@ -28,6 +28,7 @@ const ui = {
   saveStep: el("saveStep"), saveBtn: el("saveBtn"), saveStatus: el("saveStatus"),
   downloads: el("downloads"), results: el("results"),
   separate: el("optSeparate"), separateOpt: el("separateOpt"),
+  join: el("optJoin"), joinOpt: el("joinOpt"),
 };
 
 let pyodide = null;
@@ -116,6 +117,8 @@ function refresh() {
     : "Drop .txt, .epub or .zip files here, or click to choose";
 
   ui.loadBtn.disabled = busy || !pyodide || files.length === 0;
+  // Joining needs at least two files to join.
+  ui.joinOpt.hidden = files.length < 2;
   if (!busy) {
     if (!pyodide) setStatus("Still loading the converter…");
     else if (!files.length) setStatus("Add a file to start.");
@@ -185,7 +188,7 @@ async function analyze() {
   try {
     const paths = await stageFiles();
     pyodide.globals.set("JS_PATHS", pyodide.toPy(paths));
-    pyodide.globals.set("JS_OPTS", pyodide.toPy({}));
+    pyodide.globals.set("JS_OPTS", pyodide.toPy({ join: ui.join.checked && files.length > 1 }));
     const json = pyodide.runPython(`
 import importlib, api
 importlib.reload(api)
@@ -236,7 +239,7 @@ function renderReview() {
     head.className = "work__head";
     const file = document.createElement("div");
     file.className = "work__file";
-    file.textContent = work.file;
+    file.textContent = work.joined ? `${work.joined} files joined` : work.file;
     head.append(file);
 
     if (work.error) {
@@ -470,7 +473,10 @@ async function save() {
     }));
     const names = ready.map((w) => `${WORK_DIR}/${w.file}`);
     pyodide.globals.set("JS_PATHS", pyodide.toPy(names));
-    const zipName = pyodide.runPython("import archive\narchive.suggest_zip_name(list(JS_PATHS))");
+    // A joined work is named after itself: its first file is only volume 1.
+    pyodide.globals.set("JS_TITLE", ready.length === 1 && ready[0].joined ? ready[0].title : "");
+    const zipName = pyodide.runPython(
+      "import archive\narchive.clean_filename(JS_TITLE) or archive.suggest_zip_name(list(JS_PATHS))");
 
     pyodide.globals.set("JS_PAYLOAD", JSON.stringify(payload));
     pyodide.globals.set("JS_OUT", `${OUT_DIR}/${zipName}.zip`);
@@ -554,6 +560,8 @@ ui.dropZone.addEventListener("keydown", (event) => {
 });
 
 ui.loadBtn.addEventListener("click", analyze);
+// What was read no longer matches the choice, so it has to be read again.
+ui.join.addEventListener("change", () => { resetReview(); refresh(); });
 ui.saveBtn.addEventListener("click", save);
 
 refresh();
